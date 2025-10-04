@@ -1,67 +1,116 @@
 import pygame
-import serial
-import re
+import random
+import sys
 
-# Set up serial port
-ser = serial.Serial('COM7', 9600, timeout=1)
-
-# Pygame init
+# Initialize
 pygame.init()
-screen = pygame.display.set_mode((800, 600))
-pygame.display.set_caption("Joystick-Controlled Character")
-
-# Character setup
-char_pos = [400, 300]
-char_color = (255, 0, 0)
-char_radius = 20
-speed = 5
-
-# Main loop
-running = True
+WIDTH, HEIGHT = 800, 400
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Jungle Dash")
 clock = pygame.time.Clock()
+font = pygame.font.SysFont(None, 48)
 
-def parse_serial_line(line):
-    match = re.match(r"X:(\d+),Y:(\d+)", line)
-    if match:
-        return int(match.group(1)), int(match.group(2))
-    return None, None
+# Colors
+WHITE = (255, 255, 255)
+GREEN = (34, 139, 34)
+RED = (200, 0, 0)
+BLACK = (0, 0, 0)
 
-while running:
-    screen.fill((30, 30, 30))
+# Player
+player_size = (50, 50)
+player_x = 100
+player_y = HEIGHT - player_size[1] - 50
+player_vel_y = 0
+is_jumping = False
+gravity = 1
 
-    # Handle quit event
+# Obstacles
+obstacle_width = 40
+obstacle_height = 40
+obstacle_color = (139, 69, 19)  # Brown stone
+obstacles = []
+obstacle_timer = 0
+obstacle_spawn_interval = 1500  # milliseconds
+
+# Score
+start_ticks = pygame.time.get_ticks()
+game_over = False
+
+def draw_player(x, y):
+    pygame.draw.rect(screen, RED, (x, y, *player_size))
+
+def draw_obstacle(x, y):
+    pygame.draw.rect(screen, obstacle_color, (x, y, obstacle_width, obstacle_height))
+
+def display_text(text, x, y, color=WHITE):
+    surface = font.render(text, True, color)
+    screen.blit(surface, (x, y))
+
+def reset_game():
+    global obstacles, player_y, is_jumping, player_vel_y, start_ticks, game_over
+    obstacles.clear()
+    player_y = HEIGHT - player_size[1] - 50
+    is_jumping = False
+    player_vel_y = 0
+    start_ticks = pygame.time.get_ticks()
+    game_over = False
+
+# Game loop
+while True:
+    dt = clock.tick(60)
+    screen.fill(GREEN)
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
+            pygame.quit()
+            sys.exit()
+        if not game_over:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE and not is_jumping:
+                player_vel_y = -18
+                is_jumping = True
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+            reset_game()
 
-    # Read from serial
-    if ser.in_waiting:
-        line = ser.readline().decode().strip()
-        x_val, y_val = parse_serial_line(line)
+    if not game_over:
+        # Player physics
+        player_y += player_vel_y
+        player_vel_y += gravity
+        if player_y >= HEIGHT - player_size[1] - 50:
+            player_y = HEIGHT - player_size[1] - 50
+            is_jumping = False
 
-        if x_val is not None and y_val is not None:
-            # Map analog values (0-1023) to direction
-            if x_val < 400:
-                char_pos[0] -= speed
-            elif x_val > 600:
-                char_pos[0] += speed
+        # Spawn obstacles
+        obstacle_timer += dt
+        if obstacle_timer > obstacle_spawn_interval:
+            obstacle_x = WIDTH + random.randint(0, 100)
+            obstacle_y = HEIGHT - obstacle_height - 50
+            obstacles.append([obstacle_x, obstacle_y])
+            obstacle_timer = 0
 
-            if y_val < 400:
-                char_pos[1] -= speed
-            elif y_val > 600:
-                char_pos[1] += speed
+        # Move and draw obstacles
+        for obs in obstacles[:]:
+            obs[0] -= 7
+            draw_obstacle(*obs)
 
-    # Keep character in bounds
-    char_pos[0] = max(char_radius, min(800 - char_radius, char_pos[0]))
-    char_pos[1] = max(char_radius, min(600 - char_radius, char_pos[1]))
+            # Collision
+            player_rect = pygame.Rect(player_x, player_y, *player_size)
+            obstacle_rect = pygame.Rect(obs[0], obs[1], obstacle_width, obstacle_height)
+            if player_rect.colliderect(obstacle_rect):
+                game_over = True
 
-    # Draw character
-    pygame.draw.circle(screen, char_color, char_pos, char_radius)
+            # Remove off-screen obstacles
+            if obs[0] < -obstacle_width:
+                obstacles.remove(obs)
+
+        # Score
+        seconds = (pygame.time.get_ticks() - start_ticks) // 1000
+        display_text(f"Score: {seconds}", 10, 10)
+
+        # Draw player
+        draw_player(player_x, player_y)
+
+    else:
+        display_text("Game Over!", WIDTH // 2 - 120, HEIGHT // 2 - 40)
+        display_text("Press 'R' to Restart", WIDTH // 2 - 180, HEIGHT // 2 + 10)
 
     pygame.display.flip()
-    clock.tick(60)
-
-# Clean up
-ser.close()
-pygame.quit()
-T
